@@ -114,4 +114,10 @@ public class JwtService {
     public String getUsername(String token) {
         return getClaims(token).getSubject();
     }
+
+    public boolean isRefreshToken(String token) {
+        Claims claims = getClaims(token);
+        return "REFRESH".equals(claims.get("type"));
+    }
+
 }

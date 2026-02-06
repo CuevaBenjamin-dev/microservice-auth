@@ -1,3 +1,719 @@
+formulario.html (front) :
+
+
+<div class="container">
+  <!-- HEADER -->
+  <header class="header">
+    <h1>Generador de Certificados</h1>
+    <p>Complete los datos y genere uno o varios certificados en un solo archivo PPTX.</p>
+
+    <!-- 🔐 CERRAR SESIÓN -->
+    <button type="button" class="btn-logout" (click)="cerrarSesion()">Cerrar sesión</button>
+  </header>
+
+  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="form">
+    <div formArrayName="modelos">
+      <div
+        class="modelo-card"
+        *ngFor="let modelo of modelos.controls; let i = index"
+        [formGroupName]="i"
+      >
+        <div class="modelo-header">
+          <h3>Modelo {{ i + 1 }}</h3>
+
+          <button
+            type="button"
+            class="btn-remove"
+            (click)="eliminarModelo(i)"
+            *ngIf="modelos.length > 1"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- MODELO DE CERTIFICADO -->
+        <div class="field">
+          <label>Modelo de certificado</label>
+          <select formControlName="modeloCertificado">
+            <option value="" disabled>Seleccione una opción</option>
+            <option value="INSTITUTO">Instituto</option>
+            <option value="UNIVERSIDAD_2QRS">Universidad 2QRS</option>
+            <option value="UNIVERSIDAD_AZUL">Universidad Azul</option>
+            <option value="COLEGIO_ABOGADOS_CALLAO">Colegio de Abogados del Callao</option>
+          </select>
+        </div>
+
+        <!-- TIPO DE CERTIFICADO -->
+        <div class="field">
+          <label>Tipo de certificado</label>
+          <select formControlName="tipoModelo">
+            <option value="" disabled>Seleccione una opción</option>
+            <option value="DIPLOMADO">Diplomado</option>
+            <option value="PROGRAMA DE ESPECIALIZACIÓN">Programa de Especialización</option>
+            <option value="CURSO">Curso</option>
+            <option value="CURSO_DE_CAPACITACION">Curso de Capacitación</option>
+            <option value="CURSO_DE_ACTUALIZACION">Curso de Actualización</option>
+          </select>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Nombres</label>
+            <input type="text" formControlName="nombres" />
+          </div>
+
+          <div class="field">
+            <label>Apellidos</label>
+            <input type="text" formControlName="apellidos" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Tema</label>
+          <input type="text" formControlName="temaDiplomado" />
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Fecha inicio</label>
+            <input type="date" formControlName="fechaInicio" />
+          </div>
+
+          <div class="field">
+            <label>Fecha fin</label>
+            <input type="date" formControlName="fechaFin" />
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Horas académicas</label>
+            <input type="number" formControlName="horasAcademicas" />
+          </div>
+
+          <!-- <div class="field">
+            <label>Créditos académicos</label>
+            <input type="number" formControlName="creditosAcademicos" />
+          </div> -->
+          <div class="field">
+            <label>Créditos académicos</label>
+            <input type="number" formControlName="creditosAcademicos" />
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Folio N°</label>
+            <input type="text" formControlName="folioNumero" />
+          </div>
+
+          <div class="field">
+            <label>Fecha de emisión</label>
+            <input type="date" formControlName="fechaEmision" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACCIONES -->
+    <div class="actions">
+      <button
+        type="button"
+        class="btn-add"
+        (click)="agregarModelo()"
+        [disabled]="modelos.length >= MAX_MODELOS"
+      >
+        + Agregar modelo
+      </button>
+
+      <a
+        href="https://drive.google.com/file/d/1UBLykyA21zRTl-sqQzOj-y42hMMUhU_H/view"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="btn-folios"
+      >
+        N° de Folios
+      </a>
+
+      <!-- 🔥 BOTÓN LIMPIAR -->
+      <button type="button" class="btn-clear" (click)="limpiarFormulario()">Limpiar</button>
+
+      <button type="submit" class="btn-submit">Generar PPTX</button>
+    </div>
+  </form>
+  <!-- RESULTADO QR SLUGS -->
+  <div *ngIf="mostrarQrSlugs" class="qr-result">
+    <h3>Identificadores de códigos QR</h3>
+
+    <div class="qr-list">
+      <div class="qr-item" *ngFor="let slug of qrSlugs; let i = index">
+        <span class="qr-index">{{ i + 1 }}.</span>
+        <code>{{ slug }}</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+formulario.ts (front) :
+
+
+import { CommonModule } from '@angular/common';
+import { Component, Renderer2 } from '@angular/core';
+import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormularioService } from '../../services/formularioService';
+import { Router } from '@angular/router';
+
+interface ModeloFlags {
+  autoFechaEmision: boolean;
+  autoCreditos: boolean;
+}
+
+@Component({
+  selector: 'app-formulario',
+  imports: [CommonModule, ReactiveFormsModule],
+  templateUrl: './formulario.html',
+  styleUrl: './formulario.css',
+})
+export class Formulario {
+  readonly MAX_MODELOS = 12;
+  modeloFlags: ModeloFlags[] = [];
+
+  form: FormGroup;
+
+  qrSlugs: string[] = [];
+  mostrarQrSlugs = false;
+
+  private normalizarTexto(texto: string): string {
+    return texto
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // quitar tildes
+      .replace(/[^a-zA-Z0-9]/g, '') // quitar espacios y símbolos
+      .toLowerCase();
+  }
+
+  private generarSlugQR(nombres: string, apellidos: string, tema: string): string {
+    const primerNombre = nombres.trim().split(' ')[0] || '';
+    const primerApellido = apellidos.trim().split(' ')[0] || '';
+
+    return (
+      this.normalizarTexto(primerNombre) +
+      this.normalizarTexto(primerApellido) +
+      this.normalizarTexto(tema)
+    );
+  }
+
+  private MODELO_COLOR_MAP: Record<string, string> = {
+    INSTITUTO: '#3b3a40',
+    UNIVERSIDAD_2QRS: '#D14900',
+    UNIVERSIDAD_AZUL: '#004B57',
+    COLEGIO_ABOGADOS_CALLAO: '#0e8914', // azul institucional sobrio
+  };
+
+  private HORAS_A_MESES: Record<number, number> = {
+    40: 1,
+    50: 1,
+    60: 1,
+    70: 1,
+    80: 1,
+    100: 1,
+    120: 1,
+    130: 2,
+    140: 2,
+    150: 2,
+    160: 2,
+    170: 2,
+    180: 2,
+    190: 2,
+    200: 2,
+    210: 2,
+    220: 2,
+    230: 2,
+    240: 2,
+    250: 2,
+    260: 3,
+    270: 3,
+    280: 3,
+    290: 3,
+    300: 3,
+    310: 3,
+    320: 3,
+    330: 3,
+    340: 3,
+    350: 3,
+    360: 3,
+    370: 4,
+    380: 4,
+    390: 4,
+    400: 4,
+    410: 4,
+    420: 4,
+    430: 4,
+    440: 4,
+    450: 4,
+    460: 4,
+    470: 4,
+    480: 5,
+    490: 5,
+    500: 5,
+    510: 5,
+    520: 5,
+    530: 5,
+    540: 5,
+    550: 5,
+    560: 5,
+    570: 6,
+    580: 6,
+    590: 6,
+    600: 6,
+    610: 6,
+    620: 6,
+    630: 6,
+    640: 6,
+    650: 6,
+    660: 6,
+    670: 6,
+    680: 7,
+    690: 7,
+    700: 7,
+    710: 7,
+    720: 7,
+    730: 7,
+    740: 7,
+    750: 7,
+    760: 7,
+    770: 7,
+    780: 8,
+    790: 8,
+    800: 8,
+    810: 8,
+    820: 8,
+    830: 8,
+    840: 8,
+    850: 8,
+    860: 8,
+    870: 9,
+    880: 9,
+    890: 9,
+    900: 9,
+    910: 9,
+    920: 9,
+    930: 9,
+    940: 9,
+    950: 9,
+    960: 9,
+    970: 10,
+    980: 10,
+    990: 10,
+    1000: 10,
+    1010: 10,
+    1020: 10,
+    1030: 10,
+    1040: 10,
+    1050: 10,
+    1060: 10,
+    1070: 10,
+    1080: 11,
+    1090: 11,
+    1100: 11,
+    1110: 11,
+    1120: 11,
+    1130: 11,
+    1140: 11,
+    1150: 12,
+    1160: 12,
+    1170: 12,
+    1180: 12,
+    1190: 12,
+    1200: 12,
+    1210: 12,
+    1220: 12,
+    1230: 12,
+    1240: 12,
+    1250: 12,
+  };
+
+  constructor(
+    private fb: FormBuilder,
+    private service: FormularioService,
+    private renderer: Renderer2,
+    private router: Router,
+  ) {
+    this.form = this.fb.group({
+      modelos: this.fb.array([]),
+    });
+
+    this.modelos.push(this.crearModeloForm(0));
+
+    this.renderer.setStyle(document.body, 'background-color', '#f3f4f6');
+    this.renderer.setStyle(document.body, 'transition', 'background-color 0.4s ease');
+  }
+
+  get modelos(): FormArray {
+    return this.form.get('modelos') as FormArray;
+  }
+
+  private actualizarColorFondo(): void {
+    const primerModelo = this.modelos.at(0) as FormGroup;
+    const tipo = primerModelo.get('modeloCertificado')?.value;
+
+    const color = this.MODELO_COLOR_MAP[tipo] || '#f3f4f6';
+    this.renderer.setStyle(document.body, 'background-color', color);
+  }
+
+  private propagarModeloCertificado(valor: string, origenIndex: number): void {
+    this.modelos.controls.forEach((ctrl, i) => {
+      if (i === origenIndex) return;
+
+      const modeloCtrl = (ctrl as FormGroup).get('modeloCertificado');
+      if (modeloCtrl && modeloCtrl.value !== valor) {
+        modeloCtrl.setValue(valor, { emitEvent: false });
+      }
+    });
+
+    // 🔥 actualizar color de fondo una sola vez
+    this.actualizarColorFondo();
+  }
+
+  private calcularFechaInicio(modelo: FormGroup): void {
+    const fechaFinValue = modelo.get('fechaFin')?.value;
+    const horas = modelo.get('horasAcademicas')?.value;
+
+    if (!fechaFinValue || !horas) return;
+
+    const meses = this.HORAS_A_MESES[horas];
+    if (!meses) return;
+
+    const fechaFin = new Date(fechaFinValue);
+    const fechaBase = new Date(
+      fechaFin.getFullYear(),
+      fechaFin.getMonth() - meses,
+      fechaFin.getDate(),
+    );
+
+    let fechaInicio = new Date(fechaBase);
+    while (fechaInicio.getDay() !== 1) {
+      fechaInicio.setDate(fechaInicio.getDate() - 1);
+    }
+
+    const yyyy = fechaInicio.getFullYear();
+    const mm = String(fechaInicio.getMonth() + 1).padStart(2, '0');
+    const dd = String(fechaInicio.getDate()).padStart(2, '0');
+
+    modelo.get('fechaInicio')?.setValue(`${yyyy}-${mm}-${dd}`, {
+      emitEvent: false,
+    });
+  }
+
+  crearModeloForm(index: number, nombres: string = '', apellidos: string = ''): FormGroup {
+    this.modeloFlags[index] = {
+      autoFechaEmision: true,
+      autoCreditos: true,
+    };
+
+    const grupo = this.fb.group({
+      modeloCertificado: [
+        this.modelos.at(0)?.get('modeloCertificado')?.value || '',
+        Validators.required,
+      ],
+      tipoModelo: ['', Validators.required],
+
+      nombres: [nombres, [Validators.required, Validators.minLength(2)]],
+      apellidos: [apellidos, [Validators.required, Validators.minLength(2)]],
+
+      temaDiplomado: ['', [Validators.required, Validators.minLength(3)]],
+
+      fechaInicio: ['', Validators.required],
+      fechaFin: ['', Validators.required],
+
+      horasAcademicas: [null, [Validators.required, Validators.min(1)]],
+      creditosAcademicos: [0, [Validators.required, Validators.min(0)]],
+
+      folioNumero: ['', [Validators.required, Validators.minLength(3)]],
+      fechaEmision: ['', Validators.required],
+    });
+
+    // ---------- FECHA FIN → FECHA INICIO + EMISIÓN ----------
+    grupo.get('fechaFin')?.valueChanges.subscribe((fechaFin) => {
+      this.calcularFechaInicio(grupo);
+
+      const flags = this.modeloFlags[index];
+      const fechaEmisionCtrl = grupo.get('fechaEmision');
+
+      if (!flags || !fechaEmisionCtrl || !fechaFin) return;
+
+      // 🔁 AL CAMBIAR FECHA FIN, EL SISTEMA RECUPERA CONTROL
+      flags.autoFechaEmision = true;
+
+      fechaEmisionCtrl.setValue(fechaFin, { emitEvent: false });
+
+      // ✅ FORZAR ACTUALIZACIÓN INMEDIATA DEL FOLIO
+      actualizarFolio();
+    });
+
+    // ---------- FECHA EMISIÓN MANUAL ----------
+    grupo.get('fechaEmision')?.valueChanges.subscribe(() => {
+      const flags = this.modeloFlags[index];
+      if (flags) flags.autoFechaEmision = false;
+    });
+
+    // ---------- HORAS → CRÉDITOS ----------
+    grupo.get('horasAcademicas')?.valueChanges.subscribe((horas) => {
+      this.calcularFechaInicio(grupo);
+
+      const flags = this.modeloFlags[index];
+      const creditosCtrl = grupo.get('creditosAcademicos');
+      const horasNumber = Number(horas);
+
+      if (!creditosCtrl || !flags) return;
+
+      // 🔁 al cambiar horas, el sistema recupera control
+      flags.autoCreditos = true;
+
+      if (isNaN(horasNumber) || horasNumber <= 0) {
+        creditosCtrl.setValue(0, { emitEvent: false });
+        return;
+      }
+
+      const creditos = this.calcularCreditos(horasNumber);
+      creditosCtrl.setValue(creditos, { emitEvent: false });
+    });
+
+    // ---------- CRÉDITOS MANUAL ----------
+    grupo.get('creditosAcademicos')?.valueChanges.subscribe(() => {
+      const flags = this.modeloFlags[index];
+      if (flags) flags.autoCreditos = false;
+    });
+
+    grupo.get('modeloCertificado')?.valueChanges.subscribe((valor) => {
+      if (!valor) return;
+
+      // 1️⃣ Propagar a todos los certificados
+      this.propagarModeloCertificado(valor, index);
+
+      // 2️⃣ Recalcular folio (por si cambia Universidad Azul)
+      actualizarFolio();
+    });
+
+    const actualizarFolio = () => {
+      const nombres = grupo.get('nombres')?.value;
+      const apellidos = grupo.get('apellidos')?.value;
+      const fechaEmision = grupo.get('fechaEmision')?.value;
+      const modeloCertificado = grupo.get('modeloCertificado')?.value;
+
+      const folioCtrl = grupo.get('folioNumero');
+      if (!folioCtrl) return;
+
+      const folioActual = folioCtrl.value;
+
+      const nuevoFolio = this.generarFolio(
+        nombres,
+        apellidos,
+        fechaEmision,
+        modeloCertificado,
+        folioActual,
+      );
+
+      folioCtrl.setValue(nuevoFolio, { emitEvent: false });
+    };
+
+    grupo.get('nombres')?.valueChanges.subscribe(actualizarFolio);
+    grupo.get('apellidos')?.valueChanges.subscribe(actualizarFolio);
+    grupo.get('fechaEmision')?.valueChanges.subscribe(actualizarFolio);
+    grupo.get('modeloCertificado')?.valueChanges.subscribe(actualizarFolio);
+
+    return grupo;
+  }
+
+  agregarModelo(): void {
+    if (this.modelos.length >= this.MAX_MODELOS) {
+      alert(`Solo se permite un máximo de ${this.MAX_MODELOS} certificados.`);
+      return;
+    }
+
+    const index = this.modelos.length;
+    const primerModelo = this.modelos.at(0) as FormGroup;
+
+    const nombres = primerModelo.get('nombres')?.value || '';
+    const apellidos = primerModelo.get('apellidos')?.value || '';
+
+    this.modelos.push(this.crearModeloForm(index, nombres, apellidos));
+  }
+
+  eliminarModelo(index: number): void {
+    this.modeloFlags.splice(index, 1);
+
+    if (this.modelos.length > 1) {
+      this.modelos.removeAt(index);
+      this.actualizarColorFondo();
+    }
+  }
+
+  onSubmit(): void {
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+
+    // 🔥 Generar slugs QR en el frontend
+    this.qrSlugs = this.modelos.controls.map((grupo) => {
+      const g = grupo as FormGroup;
+      return this.generarSlugQR(
+        g.get('nombres')?.value,
+        g.get('apellidos')?.value,
+        g.get('temaDiplomado')?.value,
+      );
+    });
+
+    this.mostrarQrSlugs = true;
+
+    const payload = { items: this.modelos.value };
+
+    this.service.generarPPTX(payload).subscribe({
+      next: (archivo: Blob) => this.descargarArchivo(archivo),
+      error: (err) => {
+        console.error('ERROR BACKEND:', err);
+        alert('Error al generar el PPTX. Revisa la consola.');
+      },
+    });
+  }
+
+  private descargarArchivo(blob: Blob): void {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `CERTIFICADOS_${Date.now()}.pptx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  }
+
+  limpiarFormulario(): void {
+    this.modeloFlags = [];
+
+    this.modelos.clear();
+    this.modelos.push(this.crearModeloForm(0));
+
+    this.form.reset();
+
+    this.qrSlugs = [];
+    this.mostrarQrSlugs = false;
+
+    this.renderer.setStyle(document.body, 'background-color', '#f3f4f6');
+  }
+
+  private calcularCreditos(horas: number): number {
+    if (!horas || horas <= 0) return 0;
+
+    // División exacta entre 16
+    return Math.round((horas / 16) * 100) / 100; // 2 decimales
+  }
+
+  private generarFolio(
+    nombres?: string | null,
+    apellidos?: string | null,
+    fechaEmision?: string | null,
+    modeloCertificado?: string | null,
+    folioActual?: string | null,
+  ): string {
+    if (!fechaEmision) return '';
+
+    const year = new Date(fechaEmision).getFullYear();
+
+    // 🟢 1. EXTRAER PREFIJO EXISTENTE (antes del primer " - ")
+    let prefijo = '';
+    if (folioActual && folioActual.includes(' - ')) {
+      prefijo = folioActual.split(' - ')[0];
+    }
+
+    // Si no hay prefijo, lo dejamos vacío
+    const base = prefijo ? `${prefijo} - ${year}` : ` - ${year}`;
+
+    // 🚫 Caso especial: Universidad Azul
+    if (modeloCertificado === 'UNIVERSIDAD_AZUL') {
+      return base;
+    }
+
+    // 🟢 2. CALCULAR INICIALES
+    const nombreSeguro = nombres ?? '';
+    const apellidosSeguro = apellidos ?? '';
+
+    const primerNombre = nombreSeguro.trim().charAt(0) || '';
+    const partesApellidos = apellidosSeguro.trim().split(/\s+/);
+    const primerApellido = partesApellidos[0]?.charAt(0) || '';
+    const segundoApellido = partesApellidos[1]?.charAt(0) || '';
+
+    const iniciales = (primerNombre + primerApellido + segundoApellido).toUpperCase();
+
+    return `${base} - ${iniciales}`;
+  }
+
+  cerrarSesion(): void {
+    // 🧹 Limpiar tokens
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+
+    // 🔁 Redirigir al login
+    this.router.navigate(['/login']);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+login.html (front) :
+
+
+<div class="login-wrapper">
+  <div class="login-card">
+
+    <h1>Iniciar sesión</h1>
+    <p class="subtitle">Acceso restringido</p>
+
+    <form [formGroup]="form" (ngSubmit)="onSubmit()">
+
+      <div class="field">
+        <label>Usuario</label>
+        <input
+          type="text"
+          formControlName="usuario"
+          placeholder="Ingrese su usuario"
+        />
+      </div>
+
+      <div class="field">
+        <label>Contraseña</label>
+        <input
+          type="password"
+          formControlName="password"
+          placeholder="Ingrese su contraseña"
+        />
+      </div>
+
+      <button type="submit" class="btn-login">
+        Iniciar sesión
+      </button>
+
+    </form>
+
+  </div>
+</div>
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 login.ts (front) :
 
 
@@ -72,6 +788,63 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(req);
 };
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+auth.guard.ts (front) :
+
+
+import { CanActivateFn, Router } from '@angular/router';
+import { inject } from '@angular/core';
+
+export const authGuard: CanActivateFn = () => {
+  const router = inject(Router);
+
+  const accessToken = localStorage.getItem('accessToken');
+
+  // ✅ Token presente → permitir acceso
+  if (accessToken) {
+    return true;
+  }
+
+  // ❌ No hay token → redirigir a login
+  router.navigate(['/login']);
+  return false;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+app.routes.ts (front) :
+
+
+import { Routes } from '@angular/router';
+import { Formulario } from './pages/formulario/formulario';
+import { LoginComponent } from './pages/login/login';
+import { authGuard } from './guards/auth.guard';
+
+export const routes: Routes = [
+  {
+    path: 'login',
+    component: LoginComponent,
+  },
+  {
+    path: 'generar-diploma',
+    component: Formulario,
+    canActivate: [authGuard], // 🔐 PROTEGIDO
+  },
+  {
+    path: '**',
+    redirectTo: 'login',
+  },
+];
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

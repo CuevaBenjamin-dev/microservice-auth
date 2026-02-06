@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.service.microservice_auth.dtos.ApiResponse;
 import com.service.microservice_auth.dtos.AuthTokensResponse;
 import com.service.microservice_auth.dtos.LoginRequest;
+import com.service.microservice_auth.dtos.RefreshTokenRequest;
 import com.service.microservice_auth.security.JwtService;
 import com.service.microservice_auth.services.UsuarioService;
 
@@ -68,4 +69,28 @@ public class AuthController {
         return ResponseEntity.ok(
                 ApiResponse.ok("Login exitoso", tokens));
     }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<?>> refresh(@RequestBody RefreshTokenRequest request) {
+
+        String refreshToken = request.getRefreshToken();
+
+        if (!jwtService.isTokenValid(refreshToken)) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Refresh token inválido", null));
+        }
+
+        if (!jwtService.isRefreshToken(refreshToken)) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Token incorrecto", null));
+        }
+
+        String username = jwtService.getUsername(refreshToken);
+
+        String newAccessToken = jwtService.generateAccessToken(username);
+
+        return ResponseEntity.ok(
+                ApiResponse.ok("Token renovado", newAccessToken));
+    }
+
 }
