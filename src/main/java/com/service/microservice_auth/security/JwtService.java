@@ -5,6 +5,8 @@ import java.util.Date;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
@@ -64,11 +66,52 @@ public class JwtService {
         Date expiryDate = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
-                .setSubject(username)          // Usuario autenticado
-                .claim("type", type)           // ACCESS o REFRESH
+                .setSubject(username) // Usuario autenticado
+                .claim("type", type) // ACCESS o REFRESH
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
                 .signWith(secretKey, SignatureAlgorithm.HS256)
                 .compact();
+    }
+
+    /**
+     * Métodos de validación JWT.
+     */
+    public boolean isTokenValid(String token) {
+        try {
+            Jwts.parserBuilder()
+                    .setSigningKey(secretKey)
+                    .build()
+                    .parseClaimsJws(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Extrae los claims del token.
+     */
+    public Claims getClaims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(secretKey)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+    }
+
+    /**
+     * Valida que el token sea de tipo ACCESS.
+     */
+    public boolean isAccessToken(String token) {
+        Claims claims = getClaims(token);
+        return "ACCESS".equals(claims.get("type"));
+    }
+
+    /**
+     * Extrae el username (subject).
+     */
+    public String getUsername(String token) {
+        return getClaims(token).getSubject();
     }
 }

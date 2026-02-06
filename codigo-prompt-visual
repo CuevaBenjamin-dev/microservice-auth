@@ -54,6 +54,31 @@ export class LoginComponent {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+auth.interceptor.ts (front) :
+
+
+import { HttpInterceptorFn } from '@angular/common/http';
+
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const token = localStorage.getItem('accessToken');
+
+  if (token) {
+    req = req.clone({
+      setHeaders: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  }
+
+  return next(req);
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 interfaces.ts (front) :
 
 
@@ -521,6 +546,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
+
+import com.service.microservice_auth.security.JwtAuthFilter;
+
 /**
  * Configuración de seguridad básica.
  * 
@@ -540,6 +570,18 @@ public class SecurityConfig {
     public BCryptPasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
+
+    /**
+     * Registro manual del filtro JWT.
+     */
+    @Bean
+    public FilterRegistrationBean<JwtAuthFilter> jwtFilter(JwtAuthFilter filter) {
+        FilterRegistrationBean<JwtAuthFilter> registration = new FilterRegistrationBean<>();
+        registration.setFilter(filter);
+        registration.addUrlPatterns("/*");
+        registration.setOrder(1);
+        return registration;
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -558,6 +600,8 @@ import java.util.Date;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
@@ -617,12 +661,53 @@ public class JwtService {
         Date expiryDate = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
-                .setSubject(username)          // Usuario autenticado
-                .claim("type", type)           // ACCESS o REFRESH
+                .setSubject(username) // Usuario autenticado
+                .claim("type", type) // ACCESS o REFRESH
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
                 .signWith(secretKey, SignatureAlgorithm.HS256)
                 .compact();
+    }
+
+    /**
+     * Métodos de validación JWT.
+     */
+    public boolean isTokenValid(String token) {
+        try {
+            Jwts.parserBuilder()
+                    .setSigningKey(secretKey)
+                    .build()
+                    .parseClaimsJws(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Extrae los claims del token.
+     */
+    public Claims getClaims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(secretKey)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+    }
+
+    /**
+     * Valida que el token sea de tipo ACCESS.
+     */
+    public boolean isAccessToken(String token) {
+        Claims claims = getClaims(token);
+        return "ACCESS".equals(claims.get("type"));
+    }
+
+    /**
+     * Extrae el username (subject).
+     */
+    public String getUsername(String token) {
+        return getClaims(token).getSubject();
     }
 }
 
@@ -660,6 +745,109 @@ public class AuthTokensResponse {
 
     public String getRefreshToken() {
         return refreshToken;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+JwtAuthFilter.java (back) :
+
+
+package com.service.microservice_auth.security;
+
+import java.io.IOException;
+
+import org.springframework.stereotype.Component;
+
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+/**
+ * Filtro de autorización JWT.
+ * 
+ * NIVEL 5:
+ * - Valida Access Token
+ * - Rechaza tokens inválidos
+ * - No usa Spring Security aún
+ */
+@Component
+public class JwtAuthFilter implements Filter {
+
+    private final JwtService jwtService;
+
+    public JwtAuthFilter(JwtService jwtService) {
+        this.jwtService = jwtService;
+    }
+
+    @Override
+    public void doFilter(
+            ServletRequest request,
+            ServletResponse response,
+            FilterChain chain)
+            throws IOException, ServletException {
+
+        HttpServletRequest httpRequest = (HttpServletRequest) request;
+        HttpServletResponse httpResponse = (HttpServletResponse) response;
+
+        String path = httpRequest.getRequestURI();
+
+        // 🔓 Endpoints públicos
+        if (path.startsWith("/auth")) {
+            chain.doFilter(request, response);
+            return;
+        }
+
+        String authHeader = httpRequest.getHeader("Authorization");
+
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+        }
+
+        String token = authHeader.substring(7);
+
+        if (!jwtService.isTokenValid(token) || !jwtService.isAccessToken(token)) {
+            httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+        }
+
+        // Token válido → continuar
+        chain.doFilter(request, response);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TestController.java (back) :
+
+
+package com.service.microservice_auth.controllers;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * Endpoint protegido de prueba.
+ */
+@RestController
+public class TestController {
+
+    @GetMapping("/protected")
+    public String protectedEndpoint() {
+        return "Acceso permitido con Access Token válido";
     }
 }
 
