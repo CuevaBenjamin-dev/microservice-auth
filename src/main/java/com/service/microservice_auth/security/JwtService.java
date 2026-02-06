@@ -1,6 +1,7 @@
 package com.service.microservice_auth.security;
 
 import java.util.Date;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -60,14 +61,16 @@ public class JwtService {
     /**
      * Método interno para generar tokens JWT.
      */
+
     private String generateToken(String username, long expirationMs, String type) {
 
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
-                .setSubject(username) // Usuario autenticado
-                .claim("type", type) // ACCESS o REFRESH
+                .setId(UUID.randomUUID().toString()) // 🔥 CLAVE
+                .setSubject(username)
+                .claim("type", type)
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
                 .signWith(secretKey, SignatureAlgorithm.HS256)

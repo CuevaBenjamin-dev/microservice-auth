@@ -774,20 +774,58 @@ auth.interceptor.ts (front) :
 
 
 import { HttpInterceptorFn } from '@angular/common/http';
+import { inject } from '@angular/core';
+import { AuthService } from '../services/auth-service';
+import { Router } from '@angular/router';
+import { catchError, switchMap, throwError } from 'rxjs';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  const token = localStorage.getItem('accessToken');
+  const authService = inject(AuthService);
+  const router = inject(Router);
 
-  if (token) {
+  const accessToken = localStorage.getItem('accessToken');
+
+  if (accessToken) {
     req = req.clone({
       setHeaders: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${accessToken}`,
       },
     });
   }
 
-  return next(req);
+  return next(req).pipe(
+    catchError((error) => {
+      if (error.status === 401) {
+        return authService.refreshToken().pipe(
+          switchMap((res) => {
+            if (!res.success || !res.data) {
+              throw new Error('Refresh fallido');
+            }
+
+            localStorage.setItem('accessToken', res.data);
+
+            const retryReq = req.clone({
+              setHeaders: {
+                Authorization: `Bearer ${res.data}`,
+              },
+            });
+
+            return next(retryReq);
+          }),
+          catchError(() => {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            router.navigate(['/login']);
+            return throwError(() => error);
+          }),
+        );
+      }
+
+      return throwError(() => error);
+    }),
+  );
 };
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -914,6 +952,14 @@ export class AuthService {
   login(request: LoginRequest): Observable<ApiResponse<AuthTokens>> {
     return this.http.post<ApiResponse<AuthTokens>>(this.apiUrl, request);
   }
+
+  refreshToken(): Observable<ApiResponse<string>> {
+    const refreshToken = localStorage.getItem('refreshToken');
+
+    return this.http.post<ApiResponse<string>>('http://localhost:8080/auth/refresh', {
+      refreshToken,
+    });
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -937,6 +983,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.service.microservice_auth.dtos.ApiResponse;
 import com.service.microservice_auth.dtos.AuthTokensResponse;
 import com.service.microservice_auth.dtos.LoginRequest;
+import com.service.microservice_auth.dtos.RefreshTokenRequest;
 import com.service.microservice_auth.security.JwtService;
 import com.service.microservice_auth.services.UsuarioService;
 
@@ -995,6 +1042,30 @@ public class AuthController {
         return ResponseEntity.ok(
                 ApiResponse.ok("Login exitoso", tokens));
     }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<?>> refresh(@RequestBody RefreshTokenRequest request) {
+
+        String refreshToken = request.getRefreshToken();
+
+        if (!jwtService.isTokenValid(refreshToken)) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Refresh token inválido", null));
+        }
+
+        if (!jwtService.isRefreshToken(refreshToken)) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Token incorrecto", null));
+        }
+
+        String username = jwtService.getUsername(refreshToken);
+
+        String newAccessToken = jwtService.generateAccessToken(username);
+
+        return ResponseEntity.ok(
+                ApiResponse.ok("Token renovado", newAccessToken));
+    }
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////7
@@ -1369,6 +1440,7 @@ JwtService.java (back) :
 package com.service.microservice_auth.security;
 
 import java.util.Date;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -1428,14 +1500,16 @@ public class JwtService {
     /**
      * Método interno para generar tokens JWT.
      */
+
     private String generateToken(String username, long expirationMs, String type) {
 
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
-                .setSubject(username) // Usuario autenticado
-                .claim("type", type) // ACCESS o REFRESH
+                .setId(UUID.randomUUID().toString()) // 🔥 CLAVE
+                .setSubject(username)
+                .claim("type", type)
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
                 .signWith(secretKey, SignatureAlgorithm.HS256)
@@ -1482,6 +1556,12 @@ public class JwtService {
     public String getUsername(String token) {
         return getClaims(token).getSubject();
     }
+
+    public boolean isRefreshToken(String token) {
+        Claims claims = getClaims(token);
+        return "REFRESH".equals(claims.get("type"));
+    }
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1604,23 +1684,24 @@ public class JwtAuthFilter implements Filter {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TestController.java (back) :
+RefreshTokenRequest.java (back) :
 
 
-package com.service.microservice_auth.controllers;
+package com.service.microservice_auth.dtos;
 
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.constraints.NotBlank;
 
-/**
- * Endpoint protegido de prueba.
- */
-@RestController
-public class TestController {
+public class RefreshTokenRequest {
 
-    @GetMapping("/protected")
-    public String protectedEndpoint() {
-        return "Acceso permitido con Access Token válido";
+    @NotBlank
+    private String refreshToken;
+
+    public String getRefreshToken() {
+        return refreshToken;
+    }
+
+    public void setRefreshToken(String refreshToken) {
+        this.refreshToken = refreshToken;
     }
 }
 
@@ -1669,7 +1750,7 @@ spring.jpa.open-in-view=false
 jwt.secret=mi_clave_secreta_super_segura_2026
 
 # Access token: 15 minutos
-jwt.access-expiration-ms=900000
+jwt.access-expiration-ms=30000
 
 # Refresh token: 7 días
 jwt.refresh-expiration-ms=604800000
