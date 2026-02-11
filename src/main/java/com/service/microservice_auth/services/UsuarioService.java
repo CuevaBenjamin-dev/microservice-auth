@@ -1,10 +1,12 @@
 package com.service.microservice_auth.services;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.service.microservice_auth.models.Role;
 import com.service.microservice_auth.models.Usuario;
 import com.service.microservice_auth.repositories.UsuarioRepository;
 
@@ -47,7 +49,50 @@ public class UsuarioService {
         // return usuarioDB.get().getPassword().equals(password);
         // BCrypt compara texto plano vs hash almacenado
         return passwordEncoder.matches( // qué hace matches? compara el texto plano con el hash almacenado
-                password, 
+                password,
                 usuarioDB.get().getPassword());
+    }
+
+    /**
+     * NIVEL 9.2 - ROLES
+     * Obtiene el rol del usuario (para inyectarlo en el JWT).
+     */
+    public Role getRoleByUsername(String usuario) {
+        return usuarioRepository.findByUsuario(usuario)
+                .map(Usuario::getRole)
+                .orElseThrow(() -> new RuntimeException("Usuario no existe"));
+    }
+
+    // ==========================
+    // CRUD ADMIN (para controller)
+    // ==========================
+
+    public List<Usuario> listAll() {
+        return usuarioRepository.findAll();
+    }
+
+    public Usuario createUser(String usuario, String rawPassword, Role role) {
+        Usuario u = new Usuario();
+        u.setUsuario(usuario);
+        u.setPassword(passwordEncoder.encode(rawPassword));
+        u.setRole(role == null ? Role.USER : role);
+        return usuarioRepository.save(u);
+    }
+
+    public Usuario updateUser(Long id, String rawPassword, Role role) {
+        Usuario u = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Usuario no existe"));
+
+        if (rawPassword != null && !rawPassword.isBlank()) {
+            u.setPassword(passwordEncoder.encode(rawPassword));
+        }
+        if (role != null) {
+            u.setRole(role);
+        }
+        return usuarioRepository.save(u);
+    }
+
+    public void deleteUser(Long id) {
+        usuarioRepository.deleteById(id);
     }
 }

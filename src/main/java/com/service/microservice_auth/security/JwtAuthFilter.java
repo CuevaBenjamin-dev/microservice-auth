@@ -30,16 +30,27 @@ public class JwtAuthFilter implements Filter {
     }
 
     @Override
-    public void doFilter(
-            ServletRequest request,
-            ServletResponse response,
-            FilterChain chain)
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
 
-        HttpServletRequest httpRequest = (HttpServletRequest) request;
-        HttpServletResponse httpResponse = (HttpServletResponse) response;
+        HttpServletRequest req = (HttpServletRequest) request;
+        HttpServletResponse res = (HttpServletResponse) response;
 
-        String path = httpRequest.getRequestURI();
+        String origin = req.getHeader("Origin");
+        if ("http://localhost:4200".equals(origin)) {
+            res.setHeader("Access-Control-Allow-Origin", origin);
+            res.setHeader("Vary", "Origin");
+            res.setHeader("Access-Control-Allow-Credentials", "true");
+            res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+            res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+        }
+
+        if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
+            res.setStatus(HttpServletResponse.SC_OK);
+            return;
+        }
+
+        String path = req.getRequestURI();
 
         // 🔓 Endpoints públicos
         if (path.startsWith("/auth")) {
@@ -47,21 +58,30 @@ public class JwtAuthFilter implements Filter {
             return;
         }
 
-        String authHeader = httpRequest.getHeader("Authorization");
-
+        // (1) Validación JWT access token (igual que ya tienes)
+        String authHeader = req.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
 
         String token = authHeader.substring(7);
 
         if (!jwtService.isTokenValid(token) || !jwtService.isAccessToken(token)) {
-            httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
 
-        // Token válido → continuar
+        // (2) ✅ Autorización por rol (solo para rutas específicas)
+        if (path.startsWith("/api/users")) {
+            String role = jwtService.getRole(token);
+            if (!"ADMIN".equals(role)) {
+                res.setStatus(HttpServletResponse.SC_FORBIDDEN); // 403
+                return;
+            }
+        }
+
+        // Token válido y autorizado → continuar
         chain.doFilter(request, response);
     }
 }

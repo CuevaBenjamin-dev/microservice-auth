@@ -44,8 +44,8 @@ public class JwtService {
      * - Se usa para acceder a endpoints protegidos
      * - Vida corta
      */
-    public String generateAccessToken(String username) {
-        return generateToken(username, accessExpirationMs, "ACCESS");
+    public String generateAccessToken(String username, String role) {
+        return generateToken(username, accessExpirationMs, "ACCESS", role);
     }
 
     /**
@@ -55,26 +55,41 @@ public class JwtService {
      * - Vida larga
      */
     public String generateRefreshToken(String username) {
-        return generateToken(username, refreshExpirationMs, "REFRESH");
+        // refresh NO necesita role, solo identidad y type
+        return generateToken(username, refreshExpirationMs, "REFRESH", null);
     }
 
     /**
      * Método interno para generar tokens JWT.
      */
-
-    private String generateToken(String username, long expirationMs, String type) {
-
+    private String generateToken(String username, long expirationMs, String type, String role) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expirationMs);
 
-        return Jwts.builder()
-                .setId(UUID.randomUUID().toString()) // 🔥 CLAVE
+        var builder = Jwts.builder()
+                .setId(UUID.randomUUID().toString())
                 .setSubject(username)
                 .claim("type", type)
                 .setIssuedAt(now)
-                .setExpiration(expiryDate)
+                .setExpiration(expiryDate);
+
+        // ✅ Role SOLO en access token
+        if (role != null && "ACCESS".equals(type)) {
+            builder = builder.claim("role", role);
+        }
+
+        return builder
                 .signWith(secretKey, SignatureAlgorithm.HS256)
                 .compact();
+    }
+
+    /**
+     * Extrae role del ACCESS token.
+     */
+    public String getRole(String token) {
+        Claims claims = getClaims(token);
+        Object role = claims.get("role");
+        return role == null ? null : role.toString();
     }
 
     /**
