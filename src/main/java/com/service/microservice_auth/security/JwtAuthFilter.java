@@ -2,6 +2,7 @@ package com.service.microservice_auth.security;
 
 import java.io.IOException;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import jakarta.servlet.Filter;
@@ -38,11 +39,11 @@ public class JwtAuthFilter implements Filter {
 
         String origin = req.getHeader("Origin");
         if ("http://localhost:4200".equals(origin)) {
-            res.setHeader("Access-Control-Allow-Origin", origin);
-            res.setHeader("Vary", "Origin");
-            res.setHeader("Access-Control-Allow-Credentials", "true");
-            res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
-            res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Vary", "Origin");
+        res.setHeader("Access-Control-Allow-Credentials", "true");
+        res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+        res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
         }
 
         if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {

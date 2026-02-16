@@ -27,7 +27,10 @@ import jakarta.validation.Valid;
  * - Usa ApiResponse como formato estándar
  * - NO aplica hashing ni tokens todavía
  */
-@CrossOrigin(origins = "http://localhost:4200", allowCredentials = "true")
+@CrossOrigin(origins = {
+                "http://localhost:4200",
+                "https://ipdefrontendcertificados.vercel.app"
+}, allowCredentials = "true")
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
@@ -75,12 +78,12 @@ public class AuthController {
                 // JavaScript NO puede leerla (protección XSS)
                 ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", refreshToken)
                                 .httpOnly(true) // 🔒 NO accesible desde JS
-                                .secure(false) // ⚠️ true en PRODUCCIÓN (HTTPS)
+                                .secure(true) // ⚠️ true en PRODUCCIÓN (HTTPS)
                                 .path("/auth/refresh") // esto significa que la cookie se enviará en TODAS las rutas, no
-                                                       // solo /auth/refresh, para que funcione en cross-site
+                                               // solo /auth/refresh, para que funcione en cross-site
                                 .maxAge(7 * 24 * 60 * 60) // 7 días
-                                .sameSite("Lax") // Protege contra CSRF pero permite navegación normal, y será None con
-                                                 // secure(true) en producción, para que funcione en cross-site
+                                .sameSite("None") // Protege contra CSRF pero permite navegación normal, y será None con
+                                                  // secure(true) en producción, para que funcione en cross-site
                                 .build();
 
                 // ❗ IMPORTANTE:
@@ -124,7 +127,7 @@ public class AuthController {
 
                 String newAccessToken = jwtService.generateAccessToken(username, role);
                 String newRefreshToken = jwtService.generateRefreshToken(username);
-                
+
                 // ✅ REVOCAR refresh anterior y GUARDAR el nuevo
                 refreshTokenService.revokeAll(username);
                 refreshTokenService.save(username, newRefreshToken);
@@ -132,12 +135,12 @@ public class AuthController {
                 // 🍪 Nueva cookie (rotación)
                 ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", newRefreshToken)
                                 .httpOnly(true)
-                                .secure(false) // true en PROD
+                                .secure(true) // true en PROD
                                 .path("/auth/refresh") // esto significa que la cookie se enviará en TODAS las rutas, no
-                                                       // solo /auth/refresh, para que funcione en cross-site
+                                               // solo /auth/refresh, para que funcione en cross-site
                                 .maxAge(7 * 24 * 60 * 60)
-                                .sameSite("Lax") // Protege contra CSRF pero permite navegación normal, y será None con
-                                                 // secure(true) en producción, para que funcione en cross-site
+                                .sameSite("None") // Protege contra CSRF pero permite navegación normal, y será None con
+                                                  // secure(true) en producción, para que funcione en cross-site
                                 .build();
 
                 return ResponseEntity.ok()
@@ -163,9 +166,9 @@ public class AuthController {
                 // 🍪 Borrar cookie
                 ResponseCookie deleteCookie = ResponseCookie.from("refreshToken", "")
                                 .httpOnly(true)
-                                .secure(false)
+                                .secure(true)
                                 .path("/auth/refresh")
-                                .maxAge(0)
+                                .sameSite("None")
                                 .build();
 
                 return ResponseEntity.ok()
