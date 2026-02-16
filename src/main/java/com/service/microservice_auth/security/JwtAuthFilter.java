@@ -38,16 +38,27 @@ public class JwtAuthFilter implements Filter {
         HttpServletResponse res = (HttpServletResponse) response;
 
         String origin = req.getHeader("Origin");
-        if ("http://localhost:4200".equals(origin)) {
-        res.setHeader("Access-Control-Allow-Origin", origin);
-        res.setHeader("Vary", "Origin");
-        res.setHeader("Access-Control-Allow-Credentials", "true");
-        res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
-        res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+        if ("http://localhost:4200".equals(origin) ||
+                "https://ipdefrontendcertificados.vercel.app".equals(origin)) {
+            res.setHeader("Access-Control-Allow-Origin", origin);
+            res.setHeader("Vary", "Origin");
+            res.setHeader("Access-Control-Allow-Credentials", "true");
+            res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+            res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
         }
 
+        // if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
+        // res.setStatus(HttpServletResponse.SC_OK);
+        // return;
+        // }
+
         if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
+            res.setHeader("Access-Control-Allow-Origin", origin);
+            res.setHeader("Access-Control-Allow-Credentials", "true");
+            res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+            res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
             res.setStatus(HttpServletResponse.SC_OK);
+            res.getWriter().flush();
             return;
         }
 
