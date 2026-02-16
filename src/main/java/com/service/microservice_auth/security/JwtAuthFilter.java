@@ -39,10 +39,11 @@ public class JwtAuthFilter implements Filter {
 
         String origin = req.getHeader("Origin");
 
-        // ✅ CORS SIEMPRE primero (Railway-safe)
+        // ✅ CORS SIEMPRE PRIMERO (CRÍTICO)
         if (origin != null &&
                 (origin.equals("http://localhost:4200") ||
                         origin.equals("https://ipdefrontendcertificados.vercel.app"))) {
+
             res.setHeader("Access-Control-Allow-Origin", origin);
             res.setHeader("Vary", "Origin");
             res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -50,26 +51,21 @@ public class JwtAuthFilter implements Filter {
             res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
         }
 
-        // ✅ PRE-FLIGHT: salir LIMPIO
+        // ✅ PRE-FLIGHT: RESPUESTA LIMPIA
         if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
-            res.setStatus(HttpServletResponse.SC_NO_CONTENT); // 🔑 204 mejor que 200 en Railway
+            res.setStatus(HttpServletResponse.SC_OK);
             return;
         }
 
-        // if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
-        // res.setStatus(HttpServletResponse.SC_OK);
-        // return;
-        // }
-
         String path = req.getRequestURI();
 
-        // 🔓 Endpoints públicos
+        // 🔓 RUTAS PÚBLICAS
         if (path.startsWith("/auth")) {
             chain.doFilter(request, response);
             return;
         }
 
-        // (1) Validación JWT access token (igual que ya tienes)
+        // 🔐 VALIDACIÓN JWT
         String authHeader = req.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -83,16 +79,15 @@ public class JwtAuthFilter implements Filter {
             return;
         }
 
-        // (2) ✅ Autorización por rol (solo para rutas específicas)
+        // 🔒 AUTORIZACIÓN ADMIN
         if (path.startsWith("/api/users")) {
             String role = jwtService.getRole(token);
             if (!"ADMIN".equals(role)) {
-                res.setStatus(HttpServletResponse.SC_FORBIDDEN); // 403
+                res.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 return;
             }
         }
 
-        // Token válido y autorizado → continuar
         chain.doFilter(request, response);
     }
 }
