@@ -2,27 +2,19 @@ package com.service.microservice_auth.security;
 
 import java.io.IOException;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
 
-import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.ServletRequest;
-import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-/**
- * Filtro de autorización JWT.
- * 
- * NIVEL 5:
- * - Valida Access Token
- * - Rechaza tokens inválidos
- * - No usa Spring Security aún
- */
 @Component
-public class JwtAuthFilter implements Filter {
+@Order(Ordered.HIGHEST_PRECEDENCE) // 🔥 CRÍTICO PARA RAILWAY
+public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
 
@@ -31,18 +23,17 @@ public class JwtAuthFilter implements Filter {
     }
 
     @Override
-    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
-            throws IOException, ServletException {
-
-        HttpServletRequest req = (HttpServletRequest) request;
-        HttpServletResponse res = (HttpServletResponse) response;
+    protected void doFilterInternal(
+            HttpServletRequest req,
+            HttpServletResponse res,
+            FilterChain chain) throws ServletException, IOException {
 
         String origin = req.getHeader("Origin");
 
-        // ✅ CORS SIEMPRE PRIMERO (CRÍTICO)
+        // ✅ CORS headers SIEMPRE
         if (origin != null &&
-                (origin.equals("http://localhost:4200") ||
-                        origin.equals("https://ipdefrontendcertificados.vercel.app"))) {
+                (origin.equals("http://localhost:4200")
+                        || origin.equals("https://ipdefrontendcertificados.vercel.app"))) {
 
             res.setHeader("Access-Control-Allow-Origin", origin);
             res.setHeader("Vary", "Origin");
@@ -51,21 +42,22 @@ public class JwtAuthFilter implements Filter {
             res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
         }
 
-        // ✅ PRE-FLIGHT: RESPUESTA LIMPIA
+        // ✅ PRE-FLIGHT — RESPUESTA LIMPIA
         if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
-            res.setStatus(HttpServletResponse.SC_OK);
+            res.setStatus(HttpServletResponse.SC_NO_CONTENT); // 204
+            res.setContentLength(0);
             return;
         }
 
         String path = req.getRequestURI();
 
-        // 🔓 RUTAS PÚBLICAS
+        // 🔓 Endpoints públicos
         if (path.startsWith("/auth")) {
-            chain.doFilter(request, response);
+            chain.doFilter(req, res);
             return;
         }
 
-        // 🔐 VALIDACIÓN JWT
+        // 🔐 JWT
         String authHeader = req.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -79,7 +71,6 @@ public class JwtAuthFilter implements Filter {
             return;
         }
 
-        // 🔒 AUTORIZACIÓN ADMIN
         if (path.startsWith("/api/users")) {
             String role = jwtService.getRole(token);
             if (!"ADMIN".equals(role)) {
@@ -88,6 +79,6 @@ public class JwtAuthFilter implements Filter {
             }
         }
 
-        chain.doFilter(request, response);
+        chain.doFilter(req, res);
     }
 }
