@@ -38,8 +38,11 @@ public class JwtAuthFilter implements Filter {
         HttpServletResponse res = (HttpServletResponse) response;
 
         String origin = req.getHeader("Origin");
-        if ("http://localhost:4200".equals(origin) ||
-                "https://ipdefrontendcertificados.vercel.app".equals(origin)) {
+
+        // ✅ CORS SIEMPRE primero (Railway-safe)
+        if (origin != null &&
+                (origin.equals("http://localhost:4200") ||
+                        origin.equals("https://ipdefrontendcertificados.vercel.app"))) {
             res.setHeader("Access-Control-Allow-Origin", origin);
             res.setHeader("Vary", "Origin");
             res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -47,20 +50,16 @@ public class JwtAuthFilter implements Filter {
             res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
         }
 
+        // ✅ PRE-FLIGHT: salir LIMPIO
+        if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
+            res.setStatus(HttpServletResponse.SC_NO_CONTENT); // 🔑 204 mejor que 200 en Railway
+            return;
+        }
+
         // if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
         // res.setStatus(HttpServletResponse.SC_OK);
         // return;
         // }
-
-        if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
-            res.setHeader("Access-Control-Allow-Origin", origin);
-            res.setHeader("Access-Control-Allow-Credentials", "true");
-            res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
-            res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-            res.setStatus(HttpServletResponse.SC_OK);
-            res.getWriter().flush();
-            return;
-        }
 
         String path = req.getRequestURI();
 
